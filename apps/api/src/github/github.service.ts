@@ -1,3 +1,4 @@
+import { getPrivateKeyPath } from '@/utils/pem';
 import { Injectable } from '@nestjs/common';
 import { createAppAuth } from '@octokit/auth-app';
 import { Octokit } from '@octokit/rest';
@@ -16,10 +17,7 @@ export class GithubService {
         throw new Error('GITHUB_PRIVATE_KEY_FILE_PATH is not defined');
       }
 
-      const privateKey = fs.readFileSync(
-        process.env.GITHUB_PRIVATE_KEY_FILE_PATH,
-        'utf-8',
-      );
+      const privateKey = fs.readFileSync(getPrivateKeyPath(), 'utf-8');
       const auth = createAppAuth({
         appId: parseInt(process.env.GITHUB_APP_ID),
         privateKey,
