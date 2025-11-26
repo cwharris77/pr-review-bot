@@ -1,8 +1,8 @@
-import { getPrivateKeyPath } from '@/utils/pem';
 import { Injectable } from '@nestjs/common';
 import { createAppAuth } from '@octokit/auth-app';
 import { Octokit } from '@octokit/rest';
 import fs from 'fs';
+import { getPrivateKeyPath } from '../utils/pem';
 
 @Injectable()
 export class GithubService {
