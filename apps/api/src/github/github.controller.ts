@@ -1,4 +1,6 @@
-import { Body, Controller, Headers, Post } from '@nestjs/common';
+import type { RawBodyRequest } from '@nestjs/common';
+import { Body, Controller, Headers, Post, Req } from '@nestjs/common';
+import type { Request } from 'express';
 
 import { AiService } from 'src/ai/ai.service';
 import { verifyWebhook } from 'src/utils/webhook';
@@ -15,10 +17,11 @@ export class GithubController {
   async handlePR(
     @Headers('x-hub-signature-256') signature: string,
     @Body() payload: any,
+    @Req() req: RawBodyRequest<Request>,
   ) {
     if (
       !verifyWebhook(
-        JSON.stringify(payload),
+        (req.rawBody as Buffer).toString(),
         signature,
         process.env.GITHUB_WEBHOOK_SECRET || '',
       )
