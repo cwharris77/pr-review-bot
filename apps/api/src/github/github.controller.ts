@@ -2,8 +2,8 @@ import type { RawBodyRequest } from '@nestjs/common';
 import { Body, Controller, Headers, Post, Req } from '@nestjs/common';
 import type { Request } from 'express';
 
-import { AiService } from 'src/ai/ai.service';
-import { verifyWebhook } from 'src/utils/webhook';
+import { AiService } from '../ai/ai.service';
+import { verifyWebhook } from '../utils/webhook';
 import { GithubService } from './github.service';
 
 @Controller('webhooks')
