@@ -30,6 +30,7 @@ export class GithubController {
     }
 
     const { action, pull_request, repository } = payload;
+
     if (action !== 'opened' && action !== 'reopened')
       return { status: 'ignored' };
 

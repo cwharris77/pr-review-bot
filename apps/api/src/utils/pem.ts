@@ -10,6 +10,9 @@ export function getPrivateKeyPath(): string {
 
   const pemPath = path.join(os.tmpdir(), 'github-app.pem');
   // Write the PEM to a temp file (overwrites if exists)
-  fs.writeFileSync(pemPath, pemContents.replace(/\\n/g, '\n'));
+  // Handle both literal \n in the string and escaped \\n
+  const formattedPem = pemContents.replace(/\\n/g, '\n');
+
+  fs.writeFileSync(pemPath, formattedPem);
   return pemPath;
 }

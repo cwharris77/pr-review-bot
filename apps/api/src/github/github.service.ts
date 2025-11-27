@@ -17,7 +17,9 @@ export class GithubService {
         throw new Error('GITHUB_PRIVATE_KEY_FILE_PATH is not defined');
       }
 
-      const privateKey = fs.readFileSync(getPrivateKeyPath(), 'utf-8');
+      const privateKeyPath = getPrivateKeyPath();
+      const privateKey = fs.readFileSync(privateKeyPath, 'utf-8');
+
       const auth = createAppAuth({
         appId: parseInt(process.env.GITHUB_APP_ID),
         privateKey,
@@ -27,10 +29,14 @@ export class GithubService {
       this.octokit = new Octokit({ auth: installationAuth.token });
     } catch (error) {
       console.error('Error authenticating with GitHub:', error);
+      throw error;
     }
   }
 
   async getPRFiles(owner: string, repo: string, pull_number: number) {
+    if (!this.octokit) {
+      throw new Error('Octokit not initialized. Call authenticate() first.');
+    }
     const { data } = await this.octokit.pulls.listFiles({
       owner,
       repo,
