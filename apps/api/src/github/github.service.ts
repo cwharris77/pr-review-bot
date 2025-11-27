@@ -58,4 +58,27 @@ export class GithubService {
       body,
     });
   }
+
+  async postReviewComment(
+    owner: string,
+    repo: string,
+    pull_number: number,
+    commit_id: string,
+    path: string,
+    line: number,
+    body: string,
+  ) {
+    if (!this.octokit) {
+      throw new Error('Octokit not initialized. Call authenticate() first.');
+    }
+    await this.octokit.pulls.createReviewComment({
+      owner,
+      repo,
+      pull_number,
+      commit_id,
+      path,
+      line,
+      body,
+    });
+  }
 }

@@ -45,6 +45,27 @@ export class GithubController {
     );
 
     const analysis = await this.aiService.analyzePR(files);
+
+    // Post inline comments on specific lines
+    if (analysis.inlineComments && analysis.inlineComments.length > 0) {
+      for (const comment of analysis.inlineComments) {
+        try {
+          await this.githubService.postReviewComment(
+            owner.login,
+            repoName,
+            pull_request.number,
+            pull_request.head.sha,
+            comment.path,
+            comment.line,
+            comment.body,
+          );
+        } catch (error) {
+          console.error('Error posting inline comment:', error);
+        }
+      }
+    }
+
+    // Post overall summary as a general comment
     await this.githubService.postPRComment(
       owner.login,
       repoName,
