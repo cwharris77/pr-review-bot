@@ -1,0 +1,54 @@
+# Example probot.yaml Configuration
+
+# Enable or disable the PR review bot
+enabled: true
+
+# Trigger events for PR reviews
+# Options: opened, reopened, synchronize (when new commits are pushed)
+reviewOn:
+  - opened
+  - reopened
+  - synchronize
+
+# File patterns to include in review (glob patterns)
+includePatterns:
+  - "**/*"
+
+# File patterns to exclude from review (glob patterns)
+excludePatterns:
+  - "**/node_modules/**"
+  - "**/dist/**"
+  - "**/build/**"
+  - "**/*.min.js"
+  - "**/*.lock"
+  - "**/package-lock.json"
+  - "**/yarn.lock"
+  - "**/pnpm-lock.yaml"
+
+# Comment style preferences
+comments:
+  # Post inline comments on specific lines
+  inline: true
+
+  # Post a summary comment on the PR
+  summary: true
+
+  # Maximum number of inline comments per PR
+  maxInlineComments: 10
+
+# AI model preferences
+ai:
+  # Custom instructions or prompts for the AI
+  customInstructions: "Focus on security vulnerabilities and performance issues."
+
+  # Focus areas for review
+  # Options: bugs, security, performance, best-practices, style, documentation
+  focusAreas:
+    - bugs
+    - security
+    - performance
+    - best-practices
+
+  # Review strictness level
+  # Options: lenient, balanced, strict
+  strictness: balanced

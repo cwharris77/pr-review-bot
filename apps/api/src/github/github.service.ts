@@ -81,4 +81,36 @@ export class GithubService {
       body,
     });
   }
+
+  async getFileContent(
+    owner: string,
+    repo: string,
+    path: string,
+  ): Promise<string | null> {
+    if (!this.octokit) {
+      throw new Error('Octokit not initialized. Call authenticate() first.');
+    }
+
+    try {
+      const { data } = await this.octokit.repos.getContent({
+        owner,
+        repo,
+        path,
+      });
+
+      // Check if it's a file (not a directory)
+      if ('content' in data && data.type === 'file') {
+        // Content is base64 encoded
+        return Buffer.from(data.content, 'base64').toString('utf-8');
+      }
+
+      return null;
+    } catch (error: any) {
+      // File not found is expected when config doesn't exist
+      if (error.status === 404) {
+        return null;
+      }
+      throw error;
+    }
+  }
 }
