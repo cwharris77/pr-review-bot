@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import * as yaml from 'js-yaml';
+import { minimatch } from 'minimatch';
 import type { Config } from './config.interface';
 import { DEFAULT_CONFIG } from './default-config';
 
@@ -82,7 +83,10 @@ export class ConfigService {
     // Check exclude patterns first
     if (config.excludePatterns) {
       for (const pattern of config.excludePatterns) {
-        if (this.matchesPattern(filePath, pattern)) {
+        if (minimatch(filePath, pattern)) {
+          this.logger.log(
+            `File '${filePath}' excluded by pattern '${pattern}'`,
+          );
           return false;
         }
       }
@@ -91,31 +95,14 @@ export class ConfigService {
     // Check include patterns
     if (config.includePatterns) {
       for (const pattern of config.includePatterns) {
-        if (this.matchesPattern(filePath, pattern)) {
+        if (minimatch(filePath, pattern)) {
           return true;
         }
       }
+      this.logger.log(`File '${filePath}' did not match any include patterns`);
       return false; // No include pattern matched
     }
 
     return true; // No patterns specified, include by default
-  }
-
-  /**
-   * Simple glob pattern matching
-   * @param path - File path to test
-   * @param pattern - Glob pattern
-   * @returns Whether the path matches the pattern
-   */
-  private matchesPattern(path: string, pattern: string): boolean {
-    // Convert glob pattern to regex
-    const regexPattern = pattern
-      .replace(/\*\*/g, '.*') // ** matches any number of directories
-      .replace(/\*/g, '[^/]*') // * matches anything except /
-      .replace(/\?/g, '.') // ? matches single character
-      .replace(/\./g, '\\.'); // Escape dots
-
-    const regex = new RegExp(`^${regexPattern}$`);
-    return regex.test(path);
   }
 }

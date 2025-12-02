@@ -1,5 +1,5 @@
 import type { RawBodyRequest } from '@nestjs/common';
-import { Body, Controller, Headers, Post, Req } from '@nestjs/common';
+import { Body, Controller, Headers, Logger, Post, Req } from '@nestjs/common';
 import type { Request } from 'express';
 
 import { AiService } from '../ai/ai.service';
@@ -9,6 +9,8 @@ import { GithubService } from './github.service';
 
 @Controller('webhooks')
 export class GithubController {
+  private readonly logger = new Logger(GithubController.name);
+
   constructor(
     private githubService: GithubService,
     private aiService: AiService,
@@ -21,6 +23,8 @@ export class GithubController {
     @Body() payload: any,
     @Req() req: RawBodyRequest<Request>,
   ) {
+    this.logger.log('Received webhook event');
+
     if (
       !verifyWebhook(
         (req.rawBody as Buffer).toString(),
@@ -28,15 +32,31 @@ export class GithubController {
         process.env.GITHUB_WEBHOOK_SECRET || '',
       )
     ) {
+      this.logger.error('Invalid webhook signature');
       return { status: 'invalid signature' };
     }
 
     const { action, pull_request, repository } = payload;
+    this.logger.log(
+      `Processing action: ${action} for PR #${pull_request?.number}`,
+    );
+
+    if (!pull_request) {
+      this.logger.warn('No pull_request object in payload');
+      return { status: 'ignored - not a PR event' };
+    }
+
     const { owner, name: repoName } = repository;
-    const installationId = payload.installation.id;
+    const installationId = payload.installation?.id;
+
+    if (!installationId) {
+      this.logger.error('No installation ID found in payload');
+      return { status: 'error - no installation id' };
+    }
 
     // Authenticate with GitHub
     await this.githubService.authenticate(installationId);
+    this.logger.log('Authenticated with GitHub');
 
     // Try to load configuration from .github/diff-dragon.yaml or .github/diff-dragon.yml
     let config = this.configService.getDefaultConfig();
@@ -51,34 +71,42 @@ export class GithubController {
 
       if (configContent) {
         config = this.configService.parseConfig(configContent);
-        console.log(`Loaded config from ${configPath}`);
+        this.logger.log(`Loaded config from ${configPath}`);
         break;
       }
     }
 
     // Check if we should review based on config
     if (!this.configService.shouldReview(config, action)) {
+      this.logger.log(
+        `Skipping review: action '${action}' not in reviewOn list or bot disabled`,
+      );
       return { status: 'ignored - disabled or action not in reviewOn list' };
     }
 
     // Get PR files
+    this.logger.log('Fetching PR files...');
     const files = await this.githubService.getPRFiles(
       owner.login,
       repoName,
       pull_request.number,
     );
+    this.logger.log(`Fetched ${files.length} files`);
 
     // Filter files based on include/exclude patterns
     const filesToReview = files.filter((file) =>
       this.configService.shouldReviewFile(config, file.filename),
     );
+    this.logger.log(`Files to review after filtering: ${filesToReview.length}`);
 
     if (filesToReview.length === 0) {
       return { status: 'no files to review after filtering' };
     }
 
     // Analyze the PR
+    this.logger.log('Starting AI analysis...');
     const analysis = await this.aiService.analyzePR(filesToReview);
+    this.logger.log('AI analysis completed');
 
     // Post inline comments if enabled and present
     if (
@@ -88,6 +116,7 @@ export class GithubController {
     ) {
       const maxComments = config.comments.maxInlineComments || 10;
       const commentsToPost = analysis.inlineComments.slice(0, maxComments);
+      this.logger.log(`Posting ${commentsToPost.length} inline comments...`);
 
       for (const comment of commentsToPost) {
         try {
@@ -101,13 +130,17 @@ export class GithubController {
             comment.body,
           );
         } catch (error) {
-          console.error('Error posting inline comment:', error);
+          this.logger.error(
+            `Error posting inline comment on ${comment.path}:${comment.line}`,
+            error,
+          );
         }
       }
     }
 
     // Post overall summary if enabled
     if (config.comments?.summary) {
+      this.logger.log('Posting summary comment...');
       await this.githubService.postPRComment(
         owner.login,
         repoName,
@@ -116,6 +149,7 @@ export class GithubController {
       );
     }
 
+    this.logger.log('PR review completed successfully');
     return { status: 'ok' };
   }
 }
