@@ -64,5 +64,11 @@ export interface Config {
      * Review strictness level
      */
     strictness?: 'lenient' | 'balanced' | 'strict';
+
+    /**
+     * Maximum number of lines of code to review per PR to control costs.
+     * If the diff exceeds this, the review may be skipped or truncated.
+     */
+    maxDiffLines?: number;
   };
 }

@@ -22,5 +22,6 @@ export const DEFAULT_CONFIG: Config = {
   ai: {
     focusAreas: ['bugs', 'security', 'performance', 'best-practices'],
     strictness: 'balanced',
+    maxDiffLines: 2000,
   },
 };

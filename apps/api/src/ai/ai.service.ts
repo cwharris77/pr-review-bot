@@ -40,11 +40,24 @@ export class AiService {
       .map((file) => `File: ${file.filename}\nDiff:\n${file.patch}`)
       .join('\n\n');
 
-    const focusAreas =
-      config.ai?.focusAreas?.join(', ') ||
-      'bugs, security, performance, best-practices';
-    const strictness = config.ai?.strictness || 'balanced';
-    const customInstructions = config.ai?.customInstructions || '';
+    const focusAreas = config.ai?.focusAreas?.join(', ');
+    const strictness = config.ai?.strictness;
+    const customInstructions = config.ai?.customInstructions;
+    const maxDiffLines = config.ai?.maxDiffLines;
+
+    // Calculate total lines in diffs
+    const totalLines = diffs.split('\n').length;
+    if (totalLines > maxDiffLines) {
+      this.logger.warn(
+        `PR too large to analyze: ${totalLines} lines (limit: ${maxDiffLines})`,
+      );
+      return {
+        summary: `**Skipped Review**: This PR contains ${totalLines} lines of changes, which exceeds the limit of ${maxDiffLines} lines.`,
+        inlineComments: [],
+        suggestions: [],
+        releaseNotes: '',
+      };
+    }
 
     const prompt = `
       You are an expert code reviewer. Analyze the following file diffs from a Pull Request.
@@ -66,7 +79,7 @@ export class AiService {
 
     try {
       const completion = await this.openai.chat.completions.create({
-        model: 'gpt-4o',
+        model: 'gpt-4o-mini',
         messages: [
           { role: 'system', content: prompt },
           { role: 'user', content: diffs },
