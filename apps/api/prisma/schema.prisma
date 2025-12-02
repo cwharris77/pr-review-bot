@@ -1,0 +1,22 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Review {
+  id             Int      @id @default(autoincrement())
+  installationId Int
+  repoOwner      String
+  repoName       String
+  prNumber       Int
+  commitSha      String
+  createdAt      DateTime @default(now())
+
+  @@unique([repoOwner, repoName, prNumber, commitSha])
+}

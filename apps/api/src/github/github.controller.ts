@@ -4,6 +4,7 @@ import type { Request } from 'express';
 
 import { AiService } from '../ai/ai.service';
 import { ConfigService } from '../config/config.service';
+import { PrismaService } from '../prisma/prisma.service';
 import { verifyWebhook } from '../utils/webhook';
 import { GithubService } from './github.service';
 
@@ -15,6 +16,7 @@ export class GithubController {
     private githubService: GithubService,
     private aiService: AiService,
     private configService: ConfigService,
+    private prisma: PrismaService,
   ) {}
 
   @Post('pr-created')
@@ -57,6 +59,25 @@ export class GithubController {
     // Authenticate with GitHub
     await this.githubService.authenticate(installationId);
     this.logger.log('Authenticated with GitHub');
+
+    // Check if we've already reviewed this commit
+    const existingReview = await this.prisma.review.findUnique({
+      where: {
+        repoOwner_repoName_prNumber_commitSha: {
+          repoOwner: owner.login,
+          repoName,
+          prNumber: pull_request.number,
+          commitSha: pull_request.head.sha,
+        },
+      },
+    });
+
+    if (existingReview) {
+      this.logger.log(
+        `Already reviewed commit ${pull_request.head.sha} for PR #${pull_request.number}`,
+      );
+      return { status: 'already reviewed' };
+    }
 
     // Try to load configuration from .github/diff-dragon.yaml or .github/diff-dragon.yml
     let config = this.configService.getDefaultConfig();
@@ -148,6 +169,17 @@ export class GithubController {
         this.aiService.formatAnalysisAsMarkdown(analysis),
       );
     }
+
+    // Record this review in the database
+    await this.prisma.review.create({
+      data: {
+        installationId,
+        repoOwner: owner.login,
+        repoName,
+        prNumber: pull_request.number,
+        commitSha: pull_request.head.sha,
+      },
+    });
 
     this.logger.log('PR review completed successfully');
     return { status: 'ok' };

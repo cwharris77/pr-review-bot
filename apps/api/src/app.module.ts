@@ -4,6 +4,7 @@ import { AiModule } from './ai/ai.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { GithubModule } from './github/github.module';
+import { PrismaModule } from './prisma/prisma.module';
 
 @Module({
   imports: [
@@ -11,6 +12,7 @@ import { GithubModule } from './github/github.module';
       isGlobal: true,
       envFilePath: ['.env.local', '.env'],
     }),
+    PrismaModule,
     GithubModule,
     AiModule,
   ],
