@@ -33,26 +33,35 @@ export class AiService {
     });
   }
 
-  async analyzePR(files: any[]) {
+  async analyzePR(files: any[], config: any) {
     this.logger.log(`Analyzing ${files.length} files...`);
 
     const diffs = files
       .map((file) => `File: ${file.filename}\nDiff:\n${file.patch}`)
       .join('\n\n');
 
+    const focusAreas =
+      config.ai?.focusAreas?.join(', ') ||
+      'bugs, security, performance, best-practices';
+    const strictness = config.ai?.strictness || 'balanced';
+    const customInstructions = config.ai?.customInstructions || '';
+
     const prompt = `
       You are an expert code reviewer. Analyze the following file diffs from a Pull Request.
-      Provide a summary, inline comments for specific issues (bugs, security, performance, style),
-      general suggestions, and draft release notes.
+      Provide a summary, inline comments for specific issues, general suggestions, and draft release notes.
 
-      Focus on:
-      - Potential bugs and edge cases
-      - Security vulnerabilities
-      - Performance improvements
-      - Code style and best practices
-      - TypeScript specific issues
+      Configuration:
+      - Focus Areas: ${focusAreas}
+      - Strictness: ${strictness}
+      ${customInstructions ? `- Custom Instructions: ${customInstructions}` : ''}
 
-      For inline comments, ensure the line number exists in the added lines of the diff (lines starting with +).
+      Guidelines:
+      - Focus primarily on the requested focus areas.
+      - Adjust your tone and nit-picking based on the strictness level:
+        - lenient: Only point out critical bugs and major security issues. Be encouraging.
+        - balanced: Point out bugs, security issues, and clear code style violations.
+        - strict: Point out everything including minor style nitpicks, optimization opportunities, and documentation gaps.
+      - For inline comments, ensure the line number exists in the added lines of the diff (lines starting with +).
     `;
 
     try {

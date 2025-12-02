@@ -105,7 +105,7 @@ export class GithubController {
 
     // Analyze the PR
     this.logger.log('Starting AI analysis...');
-    const analysis = await this.aiService.analyzePR(filesToReview);
+    const analysis = await this.aiService.analyzePR(filesToReview, config);
     this.logger.log('AI analysis completed');
 
     // Post inline comments if enabled and present
