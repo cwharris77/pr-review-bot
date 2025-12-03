@@ -2,11 +2,16 @@ import type { RawBodyRequest } from '@nestjs/common';
 import { Body, Controller, Headers, Logger, Post, Req } from '@nestjs/common';
 import type { Request } from 'express';
 
+import { RestEndpointMethodTypes } from '@octokit/rest';
 import { AiService } from '../ai/ai.service';
 import { ConfigService } from '../config/config.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { verifyWebhook } from '../utils/webhook';
 import { GithubService } from './github.service';
+
+type Comment =
+  RestEndpointMethodTypes['issues']['createComment']['response']['data'];
+type CheckRun = RestEndpointMethodTypes['checks']['create']['response']['data'];
 
 @Controller('webhooks')
 export class GithubController {
@@ -79,7 +84,7 @@ export class GithubController {
       return { status: 'already reviewed' };
     }
 
-    // Try to load configuration from .github/diff-dragon.yaml or .github/diff-dragon.yml
+    // Try to load configuration
     let config = this.configService.getDefaultConfig();
     const configPaths = ['.github/diff-dragon.yaml', '.github/diff-dragon.yml'];
 
@@ -124,64 +129,184 @@ export class GithubController {
       return { status: 'no files to review after filtering' };
     }
 
-    // Analyze the PR
-    this.logger.log('Starting AI analysis...');
-    const analysis = await this.aiService.analyzePR(filesToReview, config);
-    this.logger.log('AI analysis completed');
+    // ===== NEW: Post loading state =====
+    let loadingComment: Comment | undefined;
+    let checkRun: CheckRun | undefined;
 
-    // Post inline comments if enabled and present
-    if (
-      config.comments?.inline &&
-      analysis.inlineComments &&
-      analysis.inlineComments.length > 0
-    ) {
-      const maxComments = config.comments.maxInlineComments || 10;
-      const commentsToPost = analysis.inlineComments.slice(0, maxComments);
-      this.logger.log(`Posting ${commentsToPost.length} inline comments...`);
-
-      for (const comment of commentsToPost) {
-        try {
-          await this.githubService.postReviewComment(
-            owner.login,
-            repoName,
-            pull_request.number,
-            pull_request.head.sha,
-            comment.path,
-            comment.line,
-            comment.body,
-          );
-        } catch (error) {
-          this.logger.error(
-            `Error posting inline comment on ${comment.path}:${comment.line}`,
-            error,
-          );
-        }
-      }
-    }
-
-    // Post overall summary if enabled
     if (config.comments?.summary) {
-      this.logger.log('Posting summary comment...');
-      await this.githubService.postPRComment(
+      loadingComment = await this.githubService.postLoadingComment(
         owner.login,
         repoName,
         pull_request.number,
-        this.aiService.formatAnalysisAsMarkdown(analysis),
       );
+      this.logger.log('Posted loading comment');
     }
 
-    // Record this review in the database
-    await this.prisma.review.create({
-      data: {
-        installationId,
-        repoOwner: owner.login,
-        repoName,
-        prNumber: pull_request.number,
-        commitSha: pull_request.head.sha,
-      },
-    });
+    // Create check run (will gracefully fail if permissions aren't set)
+    checkRun = await this.githubService.createCheckRun(
+      owner.login,
+      repoName,
+      pull_request.head.sha,
+    );
+    if (checkRun) {
+      this.logger.log('Created check run');
+    } else {
+      this.logger.warn('Failed to create check run - check permissions');
+    }
 
-    this.logger.log('PR review completed successfully');
-    return { status: 'ok' };
+    try {
+      // Analyze the PR
+      this.logger.log('Starting AI analysis...');
+
+      // Optional: Update progress
+      if (loadingComment) {
+        await this.githubService.updateCommentWithProgress(
+          owner.login,
+          repoName,
+          loadingComment.id,
+          'analyzing',
+        );
+      }
+
+      const analysis = await this.aiService.analyzePR(filesToReview, config);
+      this.logger.log('AI analysis completed');
+
+      // Optional: Update progress again
+      if (loadingComment) {
+        await this.githubService.updateCommentWithProgress(
+          owner.login,
+          repoName,
+          loadingComment.id,
+          'reviewing',
+        );
+      }
+
+      // Post inline comments if enabled and present
+      if (
+        config.comments?.inline &&
+        analysis.inlineComments &&
+        analysis.inlineComments.length > 0
+      ) {
+        const maxComments = config.comments.maxInlineComments || 10;
+        const commentsToPost = analysis.inlineComments.slice(0, maxComments);
+        this.logger.log(`Posting ${commentsToPost.length} inline comments...`);
+
+        for (const comment of commentsToPost) {
+          try {
+            await this.githubService.postReviewComment(
+              owner.login,
+              repoName,
+              pull_request.number,
+              pull_request.head.sha,
+              comment.path,
+              comment.line,
+              comment.body,
+            );
+          } catch (error) {
+            this.logger.error(
+              `Error posting inline comment on ${comment.path}:${comment.line}`,
+              error,
+            );
+          }
+        }
+      }
+
+      // Format the analysis
+      const markdown = this.aiService.formatAnalysisAsMarkdown(analysis);
+
+      // ===== NEW: Update with results =====
+      const updatePromises: Promise<Comment | void>[] = [];
+
+      // Update comment with results
+      if (loadingComment) {
+        updatePromises.push(
+          this.githubService.updateCommentWithResults(
+            owner.login,
+            repoName,
+            loadingComment.id,
+            markdown,
+          ),
+        );
+      } else if (config.comments?.summary) {
+        // If no loading comment was created, post summary now
+        updatePromises.push(
+          this.githubService.postPRComment(
+            owner.login,
+            repoName,
+            pull_request.number,
+            markdown,
+          ),
+        );
+      }
+
+      // Update check run with results
+      if (checkRun) {
+        updatePromises.push(
+          this.githubService.updateCheckRun(
+            owner.login,
+            repoName,
+            checkRun.id,
+            'completed',
+            'success',
+            '✅ AI Review Complete',
+            analysis.summary,
+            markdown,
+            this.githubService.convertInlineCommentsToAnnotations(
+              analysis.inlineComments || [],
+            ),
+          ),
+        );
+      }
+
+      await Promise.all(updatePromises);
+
+      // Record this review in the database
+      await this.prisma.review.create({
+        data: {
+          installationId,
+          repoOwner: owner.login,
+          repoName,
+          prNumber: pull_request.number,
+          commitSha: pull_request.head.sha,
+        },
+      });
+
+      this.logger.log('PR review completed successfully');
+      return { status: 'ok' };
+    } catch (error) {
+      this.logger.error('Error during PR review:', error);
+
+      // ===== NEW: Update with error state =====
+      const errorPromises: Promise<Comment | void>[] = [];
+
+      if (loadingComment) {
+        errorPromises.push(
+          this.githubService.updateCommentWithError(
+            owner.login,
+            repoName,
+            loadingComment.id,
+            error.message,
+          ),
+        );
+      }
+
+      if (checkRun) {
+        errorPromises.push(
+          this.githubService.updateCheckRun(
+            owner.login,
+            repoName,
+            checkRun.id,
+            'completed',
+            'failure',
+            '❌ Review Failed',
+            'An error occurred during the AI review.',
+          ),
+        );
+      }
+
+      await Promise.allSettled(errorPromises);
+
+      throw error;
+    }
   }
 }
